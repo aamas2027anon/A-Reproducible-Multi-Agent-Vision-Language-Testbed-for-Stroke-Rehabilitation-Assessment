@@ -1,0 +1,54 @@
+# Paths and model sources for training and the multi-agent system.
+#
+# This file is the only place for machine-specific paths: the code itself uses paths
+# relative to `project_root`, and every manifest and checkpoint it writes records paths
+# relative to `project_root` (a location outside it is recorded by name only).
+#
+# Relative paths resolve against `project_root`; a relative `project_root` resolves
+# against this file's directory. Absolute paths and `~` are allowed, e.g.
+#   data_dir = "/path/to/stroke_rehab"
+# To use a different file (e.g. one per machine or cluster), point STROKE_REHAB_CONFIG at it:
+#   STROKE_REHAB_CONFIG=/path/to/cluster.toml python -m multi_agents.evaluate ...
+# Command-line flags still override these defaults.
+
+[paths]
+project_root = "."
+
+# Training code (imported for windowing, the model definition and metrics).
+train_dir = "train"
+
+# Raw StrokeRehab data: video_extracted_features/ and kinematics/ (metadata.xml).
+# Read by training and the multi-agent system. Example: "/path/to/stroke_rehab"
+data_dir = "data/stroke_rehab"
+
+# Training (train/run_pipeline.py).
+# The merged train/test NPZs, built from data_dir on the first training command.
+training_data_dir = "data/training"
+# Checkpoints, predictions and report tables; each stage writes to its own subdirectory.
+training_output_dir = "train/outputs"
+# Memory-mapped copies of the NPZ members (large; can point at fast scratch storage).
+training_cache_dir = "train/cache"
+
+# Models: the Hugging Face models are downloaded here if missing.
+models_dir = "models"
+base_model_dir = "models/qwen3.5-0.8B-Base"
+
+# Trained checkpoint(s). `checkpoint` pins the one to use; if it is empty, the single
+# .ckpt in `checkpoints_dir` is used. --checkpoint on the command line overrides both.
+checkpoints_dir = "models/checkpoints"
+# Set this to the trained checkpoint to evaluate, e.g. a seed's text-conditioned run:
+#   "train/outputs/qwen08_multiseed_counting/seeds/seed_1337/qwen_with_patient_text/checkpoints/<config id>/last.ckpt"
+checkpoint = "models/checkpoints/model.ckpt"
+
+# Multi-agent outputs, caches and the persistent patient memory.
+output_dir = "multi_agent_outputs"
+cache_dir = "multi_agent_outputs/cache"
+memory_path = "multi_agent_outputs/memory.sqlite"
+
+[stream]
+# Frame rate of the extracted features. A recommendation is produced every 5 frames
+# (0.33 s at 15 fps) once 116 frames (7.7 s) have been buffered.
+fps = 15.0
+
+[models]
+base_model_repo = "Qwen/Qwen3.5-0.8B-Base"
