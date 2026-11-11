@@ -1,0 +1,95 @@
+# Configuration of the testbed: paths, model, training, statistics and the multi-agent
+# system. Every command reads this file; edit it and rerun. To keep several versions, copy
+# it and select one with STROKE_REHAB_CONFIG=/path/to/copy.yaml.
+#
+# Relative paths resolve against this file's directory; absolute paths and ~ are allowed.
+
+paths:
+  data_dir: ../data/stroke_rehab      # StrokeRehab data: video_extracted_features/ and kinematics/
+  models_dir: ../models               # repository-root models/; downloaded on first use
+  output_dir: ../outputs              # repository-root outputs/; everything the runs write:
+                                      #   training/<run>/  checkpoints and predictions
+                                      #   mas/<run>/       MAS evaluation and demo outputs
+                                      #   report/          CSV tables and empirical PNG figures
+                                      #   logs/            one log per command
+                                      #   cache/           merged training data and model-output caches
+  checkpoint: ../release_checkpoint/text_seed7331.ckpt  # release checkpoint; override with --checkpoint
+
+model:
+  name: Qwen/Qwen3.5-0.8B-Base        # Hugging Face base model
+  max_text_length: 256                # prompt tokens (task description, patient sentence, instruction)
+
+training:
+  num_seeds: 10
+  clip_percentage: 100.0
+  seeds: [9575, 1337, 2718, 3141, 4242, 5150, 6023, 7331, 8191, 9001]
+  validation_subjects: [s03, s19, s27, s32]   # held out from the training split for early stopping and MAS tuning
+  epochs: 5                           # maximum; early stopping can end a run sooner
+  batch_size: 64                      # windows per device (lower it on GPUs with less than 40 GB)
+  gradient_accumulation: 4            # effective batch = batch_size x gradient_accumulation
+  num_workers: 12                     # data-loader processes
+  learning_rate: 1.0e-5
+  weight_decay: 0.01
+  scheduler_gamma: 1.0                # StepLR decay per epoch; 1.0 keeps the learning rate constant
+  gradient_clip_norm: 1.0
+  ue_fma_loss_weight: 0.1             # weight of the normalized UE-FMA error in the joint loss
+  early_stopping:
+    enabled: true
+    patience: 1                       # epochs without improvement of the validation loss
+    min_delta: 0.01
+  gradient_checkpointing: true
+  deterministic: false                # deterministic CUDA kernels (slower)
+  resume: true                        # continue from last.ckpt when a run is restarted
+  smoke_batches: 8                    # batches per stage in the smoke test
+
+lora:
+  r: 8
+  alpha: 8
+  dropout: 0.1
+  target_modules: [q_proj, k_proj, v_proj, out_proj, gate_proj, up_proj, down_proj, in_proj_qkv]
+
+statistics:
+  sign_flips: 10000                   # random sign flips of the paired test over seeds
+
+mas:
+  stream_fps: 15.0                    # demo stream rate; a recommendation every 5 frames after 116 frames
+
+  # Agent settings. tune.py replaces transition_strength, emission_temperature,
+  # population_prior_strength, rest_cost, ue_calib_a and ue_calib_b per checkpoint.
+  agents:
+    # Planning: belief_h ∝ q_h ** emission_temperature * prior_h ** transition_strength.
+    # With transition_strength 0 and emission_temperature 1 the plan is the model's own prediction.
+    transition_strength: 0.0
+    emission_temperature: 1.0
+    population_prior_strength: 2000.0         # pseudo-counts per transition row
+    patient_count_min_confidence: 0.6         # belief needed for a released transition to be counted
+    # Evaluation: calibration mu_cal = clip(ue_calib_a + ue_calib_b * mu, 0, 66) and impairment bands.
+    ue_calib_a: 0.0
+    ue_calib_b: 1.0
+    severe_below: 26.0
+    mild_from: 53.0
+    uefma_between_exercise_sd: 4.0
+    uefma_window_decorrelation: 23.0
+    uefma_drift_sigma: 2.5
+    uefma_min_exercises_for_drift: 3
+    # Safety: R2 withholds a window below escalate_confidence[band]; C1 prefers rest via rest_cost.
+    safety_enabled: true
+    rest_cost: 0.5
+    escalate_confidence: {severe: 0.35, moderate: 0.30, mild: 0.25}
+    escalation_rate_limit: 0.30               # E1: mean withheld fraction over escalation_history exercises
+    escalation_history: 3
+    implausible_transition: 0.001             # metric only: population transitions below this are implausible
+    # Coordinator.
+    exercise_escalate_fraction: 0.25
+
+  # Tuning on the validation subjects (tune.py).
+  tuning:
+    grid:
+      transition_strength: [0.0, 0.25, 0.5, 0.75, 1.0]
+      emission_temperature: [0.7, 1.0, 1.5]
+      population_prior_strength: [500.0, 2000.0, 8000.0]
+    accuracy_tolerance: 0.005         # allowed drop in all-frame accuracy against the model
+    rest_costs: [0.0, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0]
+    unsafe_reduction: 0.18            # required relative cut in the unsafe rate against the model
+    ue_calibration_slope_range: [1.0, 6.0]
+    ue_calibration_min_subjects: 3

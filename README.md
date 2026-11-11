@@ -1,110 +1,136 @@
 # Stroke Rehabilitation VLM and Multi-Agent Testbed
 
-This repository contains the supplementary code for training the vision-language movement model (VLM) and running, tuning, and evaluating the multi-agent assessment system (MAS).
+## Setup
 
-## Install
+An NVIDIA A100 GPU is recommended.
 
-Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/), then create the locked CUDA 12.6 environment:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) if it is not already available, then restart your shell.
+
+From the repository root, create the Python 3.12 virtual environment (`.venv/`) and install the project dependencies from `uv.lock`:
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+uv venv --python 3.12
 uv sync --locked
 ```
 
-Training needs one CUDA GPU (the paper used a 40 GB A100). The base model `Qwen/Qwen3.5-0.8B-Base` is downloaded from Hugging Face on first use.
-
-## Data
-
-Training, evaluation, and the demo all read the raw StrokeRehab tree (`video_extracted_features/` and `kinematics/`, with each subject's `metadata.xml`). Place or symlink it at `code/data/stroke_rehab` (ignored by git), which every command reads by default:
+Install the additional attention kernels into the same environment:
 
 ```bash
-ln -s /path/to/stroke_rehab code/data/stroke_rehab
+uv pip install "causal-conv1d==1.7.0+cu.12.6.torch.2.13" --extra-index-url https://wheels.astral.sh/simple/cu126 --no-deps
+uv pip install "flash-attn==2.8.3.post1+cu.12.6.torch.2.13" --extra-index-url https://wheels.astral.sh/simple/cu126 --no-deps
+uv pip install "fla-core==0.5.0" "flash-linear-attention==0.5.0" --no-deps
 ```
 
-Alternatively, set `data_dir` in `code/project_config.toml`, or pass `--raw-dir /path/to/stroke_rehab` to each command.
+These kernels are installed separately from the lock file; reinstall them after `uv sync`. Commands using `uv run` automatically use `.venv/`; manual activation is optional (`source .venv/bin/activate` from the repository root). The base model downloads automatically on first use.
 
-`code/project_config.toml` is the only place for machine-specific paths (data, training outputs, caches, models, checkpoints); its defaults are relative to `code/`. Outputs and checkpoints record paths relative to `code/`, never absolute ones. `STROKE_REHAB_CONFIG` selects another configuration file.
+## Release checkpoint and demo environment
 
-On the first training command, the raw clips are converted into `stroke_rehab_train_all_tasks.npz` (the 32 training subjects) and `stroke_rehab_test_all_tasks.npz` (the 8 test subjects) under `code/data/training` (`training_data_dir`, or `--data-root`). The MAS builds the same files from the same raw data, so both pipelines see identical windows, labels, and patient fields.
+[release_checkpoint/text_seed7331.ckpt](release_checkpoint/text_seed7331.ckpt) is the release checkpoint: the +text variant with the highest saved test weighted F1 across the old ten-seed runs (seed 7331, F1 **0.64362**, accuracy **64.57%**). It is a copy of the retained final-epoch `last.ckpt`, not a validation-best epoch checkpoint. Matching MAS settings and selection details are included beside it. These are previously measured scores, not new measurements.
 
-All commands below are run from `code/`:
+For demo/UI use without the training environment, create a separate `.venv-demo` from the repository root. The demo requirements use platform-native PyTorch without a CUDA suffix or CUDA-only index.
+
+macOS/Linux:
+
+```bash
+uv venv --python 3.12 .venv-demo
+uv pip install --python .venv-demo/bin/python -r requirements-demo.txt
+cd code
+../.venv-demo/bin/python -m demo_ui
+```
+
+Windows (PowerShell):
+
+```powershell
+uv venv --python 3.12 .venv-demo
+uv pip install --python .venv-demo\Scripts\python.exe -r requirements-demo.txt
+cd code
+..\.venv-demo\Scripts\python.exe -m demo_ui
+```
+
+The UI defaults to the configured release checkpoint and its packaged tuned settings. For the CLI:
+
+```bash
+../.venv-demo/bin/python -m multi_agents.demo --sample-id s04_drinking3_1 --fast \
+  --checkpoint ../release_checkpoint/text_seed7331.ckpt \
+  --mas-config ../release_checkpoint/tuned_config.json --device cpu
+```
+
+On Windows, use the `Scripts\python.exe` interpreter above for CLI commands too. The UI defaults to automatic device selection; `cpu` does not require a GPU. For NVIDIA acceleration on Linux/Windows, choose a compatible build using the [PyTorch installer](https://pytorch.org/get-started/locally/) and select `cuda` in the UI. Use a platform supported by PyTorch 2.12; these instructions do not guarantee wheels for older Intel Macs.
+
+This leaves `.venv`, `pyproject.toml` and `uv.lock` unchanged. The demo environment excludes Lightning and optional CUDA attention kernels; PyTorch fallbacks may be slower. Set `paths.data_dir` before use; the separate Base model weights download on first use. Use the explicit `.venv-demo` interpreter above to avoid syncing the full training project.
+
+## Configuration
+
+Edit [code/config.yaml](code/config.yaml):
+
+| Setting | Purpose |
+|---|---|
+| `paths.data_dir` | StrokeRehab directory containing `video_extracted_features/` and `kinematics/` |
+| `paths.models_dir`, `paths.output_dir` | Downloaded models and generated outputs |
+| `paths.checkpoint` | Optional checkpoint for single-checkpoint commands; overridden by `--checkpoint` |
+| `training.num_seeds`, `training.seeds` | Use the first N seeds; generate additional unique seeds deterministically if needed |
+| `training.clip_percentage` | Percentage of complete clips per fitting subject (training set), greater than 0 and at most 100; validation and test splits remain complete |
+| `training.epochs`, `batch_size`, `gradient_accumulation`, `learning_rate`, `num_workers` | Training hyperparameters; these keys are under `training` |
+| `lora`, `mas.agents`, `mas.tuning` | Adaptation settings, agent thresholds and validation tuning grids |
+
+For a short run, set `num_seeds: 1`, `clip_percentage: 3.0` and `epochs: 2` under `training`. Relative YAML paths resolve against the directory containing the YAML file; select another file with `STROKE_REHAB_CONFIG=/absolute/path/config.yaml`. CLI options override their corresponding defaults.
+
+## Run
+
+Run commands from `code/`:
 
 ```bash
 cd code
+
+# Optional setup check: a few batches per conditioning variant.
+uv run python train/run_pipeline.py smoke
+
+# Train the configured seeds and generate VLM reports.
+uv run python train/run_pipeline.py multiseed
+
+# Or train one configured seed by its zero-based index and override the maximum epochs.
+uv run python train/run_pipeline.py multiseed --seed-index 0 --epochs 2
+
+# Tune and evaluate available text-conditioned checkpoints for the configured seeds, then report.
+uv run python -m multi_agents.multiseed --device cuda
+
+# Regenerate reports from saved training and MAS outputs without inference.
+uv run python -m report
 ```
 
-## Training
+> **Demo:** run the demo (browser UI or single-clip CLI) from the separate demo environment, not with `uv run`. `uv run` syncs the CUDA-only training environment. Set up `.venv-demo` once as described in [Release checkpoint and demo environment](#release-checkpoint-and-demo-environment), then activate it and launch the UI from `code/`:
+>
+> ```bash
+> source .venv-demo/bin/activate      # Windows: .venv-demo\Scripts\Activate.ps1
+> cd code
+> python -m demo_ui                   # open http://127.0.0.1:7860
+> ```
+>
+> The UI uses the release checkpoint (`paths.checkpoint`) and its packaged `tuned_config.json` by default. For the command-line single-clip demo, run `python -m multi_agents.demo --sample-id s04_drinking3_1 --fast --checkpoint ../release_checkpoint/text_seed7331.ckpt --mas-config ../release_checkpoint/tuned_config.json --device cpu` from the same activated environment.
 
-`--stage multiseed` is the run reported in the paper: the three conditioning variants (`none`, `text`, `prefix`) for each of the 10 seeds.
+Training runs `none`, `text` and `prefix` conditioning together. MAS evaluation runs `vlm`, `mas`, `mas_no_memory`, `mas_no_planning` and `mas_no_safety` together. `best.ckpt` is used for evaluation; `last.ckpt` is used for resuming.
+
+For a specific checkpoint, set `CKPT` to its `best.ckpt` path and `TUNED` to the corresponding tuning output path:
 
 ```bash
-# All 10 seeds x 3 variants, serially on one GPU
-uv run python train/run_pipeline.py multiseed --stage multiseed
-
-# Or one seed per job (index 0-9 into the seed list)
-uv run python train/run_pipeline.py seed --stage multiseed --seed-index 0
-
-# VLM variant statistics across seeds (seed-level metrics and paired tests)
-uv run python train/run_pipeline.py multiseed-aggregate --stage multiseed
+uv run python -m multi_agents.tune --checkpoint "$CKPT" --output "$TUNED" --device cuda
+uv run python -m multi_agents.evaluate --checkpoint "$CKPT" --mas-config "$TUNED" --device cuda
+uv run python -m multi_agents.demo --sample-id s04_drinking3_1 --replay-history --fast \
+  --checkpoint "$CKPT" --mas-config "$TUNED" --device cuda
 ```
 
-Checkpoints and test predictions go to `train/outputs/qwen08_multiseed_counting/seeds/seed_<S>/<variant>/`, where `<variant>` is `qwen_without_patient_conditioning`, `qwen_with_patient_text`, or `qwen_with_patient_prefix`. A seed's checkpoint is `<variant>/checkpoints/<config id>/last.ckpt`. The aggregate tables go to `train/outputs/qwen08_multiseed_counting/seeds/analysis/` and `train/outputs/stat_analysis_report_tables_multiseed/`.
+| Command | Useful options |
+|---|---|
+| Training | `--seed-index`, `--epochs`, `--batch-size`, `--num-workers`, `--output-root` |
+| Batch MAS evaluation | `--training-root`, `--output`, `--device`, `--batch-size` |
+| Single-clip demo | `--sample-id`, `--history-clips`, `--replay-history`, `--memory`, `--output-dir` |
+| Demo UI | `--host`, `--port`; demo options are controls in the browser |
+| Report regeneration | `--training-root`, `--mas-root`, `--output-dir` |
 
-`--stage ceiling` is a separate single-seed (seed 42) ceiling test, run before the multi-seed sweep to check how far the model gets; it is not used for the paper's results:
+Every command supports `--help`.
 
-```bash
-uv run python train/run_pipeline.py seed --stage ceiling
-```
+Outputs default to `outputs/{training,mas,report,logs,cache}/` at the repository root. Partial-data runs use `clips_<percentage>pct` subdirectories. One seed produces descriptive CSVs; multiple seeds add across-seed reports. Completed training seeds and MAS evaluations are reused; choose a different `paths.output_dir` for an independent experiment. Each demo launch creates a separate timestamped directory.
 
-## Evaluation
+## License
 
-The MAS always uses a seed's **text-conditioned** checkpoint (`qwen_with_patient_text`). Evaluation compares five modes on identical cached VLM outputs: `vlm`, `mas`, `mas_no_memory`, `mas_no_planning`, and `mas_no_safety`.
-
-**All seeds (paper results).** For every seed, this tunes planning, the rest penalty, and the UE-FMA calibration on the four validation subjects, evaluates all modes on the test subjects, and then builds the across-seed report:
-
-```bash
-uv run python -m multi_agents.multiseed --training-root train/outputs/qwen08_multiseed_counting
-```
-
-Outputs go to `multi_agent_outputs/multiseed_text/`: `seed_<S>/tuned_config.json`, `seed_<S>/eval_test/`, and the across-seed tables and plots in `report/` (`report/tables/`, `report/mas_only/tables/`, `report/seed_level_metrics.csv`). Seeds already evaluated are skipped, so an interrupted run resumes.
-
-**One checkpoint.**
-
-```bash
-CKPT=train/outputs/qwen08_multiseed_counting/seeds/seed_1337/qwen_with_patient_text/checkpoints/<config id>/last.ckpt
-
-# Tune on the validation subjects (never on test)
-uv run python -m multi_agents.tune --split validation --checkpoint $CKPT \
-  --output multi_agent_outputs/tuned_config.json
-
-# Evaluate the VLM, full MAS, and ablations on the test subjects
-uv run python -m multi_agents.evaluate --split test --checkpoint $CKPT \
-  --mas-config multi_agent_outputs/tuned_config.json
-
-# Rebuild the across-seed report from existing seed_<S>/eval_test/ runs
-uv run python -m multi_agents.multiseed_report --root multi_agent_outputs/multiseed_text
-```
-
-`evaluate` writes `comparison.csv`, `paired_comparison.csv`, per-mode predictions and tables, and figures to `multi_agent_outputs/eval_test_<run id>/` (or `--output-dir`). Use `--modes` to run a subset of modes.
-
-## MAS demo
-
-The demo streams one recorded exercise frame by frame through the agents, as a live sensor would. After the warm-up context, every completed window prints the current and future primitive and the safety verdict, and at the end of the exercise the clinician report is printed. The report, the system details, the per-window recommendations and decisions, and the patient memory are written to the output directory (`--output-dir`). Pass the tuned config so the demo uses the same settings as the evaluation:
-
-```bash
-# Stream one exercise (--fast removes real-time pacing; the outputs are the same)
-uv run python -m multi_agents.demo --sample-id s04_drinking3_1 --fast \
-  --checkpoint $CKPT --mas-config multi_agent_outputs/tuned_config.json
-
-# Replay the patient's earlier exercises first, so the exercise is decided with that history
-uv run python -m multi_agents.demo --sample-id s04_drinking3_1 --replay-history \
-  --checkpoint $CKPT --mas-config multi_agent_outputs/tuned_config.json
-
-# Predefined scenarios (e.g. sensor dropout, corrupted features)
-uv run python -m multi_agents.demo --list-scenarios
-uv run python -m multi_agents.demo --scenario sensor_dropout --checkpoint $CKPT
-```
-
-The demo keeps patient history in a sqlite store by default, so running it again continues the same patient's record. Use `--memory inmemory` for a fresh, isolated run.
-
-Without `--checkpoint`, every MAS command uses `checkpoint` in `code/project_config.toml`. Every command lists its full options with `--help`.
+The testbed code is licensed under the [MIT License](LICENSE). Datasets and pretrained model weights retain their own licenses.

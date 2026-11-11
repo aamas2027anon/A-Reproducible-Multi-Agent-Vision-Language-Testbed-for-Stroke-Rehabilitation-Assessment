@@ -1,0 +1,8 @@
+{
+  "transition_strength": 0.5,
+  "emission_temperature": 1.5,
+  "population_prior_strength": 500.0,
+  "rest_cost": 2.0,
+  "ue_calib_a": 3.3566461592613805,
+  "ue_calib_b": 1.0
+}
