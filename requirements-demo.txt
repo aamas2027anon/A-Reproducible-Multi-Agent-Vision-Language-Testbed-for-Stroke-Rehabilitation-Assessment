@@ -1,0 +1,23 @@
+# Demo runtime versions from stroke_rehab_agent/requirements.txt.
+# Gradio is from the current project's pyproject.toml; the old project had no UI.
+# Use the platform-native PyTorch distribution from PyPI (macOS/Linux/Windows).
+# No CUDA build suffix or Linux-only package index is required.
+# NVIDIA users may select a compatible CUDA wheel separately; see README.md.
+# No Lightning, training/build tools, or optional CUDA attention kernels.
+torch==2.12.0
+transformers==5.17.0
+peft==0.21.0
+accelerate==1.15.0
+huggingface-hub==1.33.0
+numpy==2.5.2
+pandas==3.0.6
+matplotlib==3.11.2
+scipy==1.18.1
+scikit-learn==1.9.1
+tqdm==4.70.1
+pyyaml==6.0.3
+pydantic==2.13.5
+langchain-core==1.6.5
+langgraph==1.2.12
+langgraph-checkpoint-sqlite==3.1.1
+gradio==6.31.0

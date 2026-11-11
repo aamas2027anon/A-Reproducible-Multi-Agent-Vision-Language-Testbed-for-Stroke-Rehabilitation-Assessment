@@ -1,0 +1,18 @@
+{
+  "artifact": "text_seed7331.ckpt",
+  "conditioning": "text",
+  "seed": 7331,
+  "base_model": "Qwen/Qwen3.5-0.8B-Base",
+  "selection_metric": "weighted_f1",
+  "selection_split": "test",
+  "selection_direction": "higher_is_better",
+  "candidate_count": 10,
+  "selected_using_test_metrics": true,
+  "saved_metrics": {
+    "weighted_f1": 0.6436178380977619,
+    "accuracy": 0.6456984767174427,
+    "ue_fma_pearson_r": 0.819791986710493,
+    "ue_fma_mae": 9.34049888856601,
+    "ue_fma_rmse": 10.762844181370465
+  }
+}
