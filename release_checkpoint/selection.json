@@ -1,0 +1,23 @@
+{
+  "artifact": "text_seed7331.ckpt",
+  "conditioning": "text",
+  "seed": 7331,
+  "base_model": "Qwen/Qwen3.5-0.8B-Base",
+  "selection_metric": "weighted_f1",
+  "selection_split": "test",
+  "selection_direction": "higher_is_better",
+  "candidate_count": 10,
+  "selected_using_test_metrics": true,
+  "saved_metrics": {
+    "weighted_f1": 0.6436178380977619,
+    "accuracy": 0.6456984767174427,
+    "ue_fma_pearson_r": 0.819791986710493,
+    "ue_fma_mae": 9.34049888856601,
+    "ue_fma_rmse": 10.762844181370465
+  },
+  "completed_epochs": 3,
+  "source_checkpoint": "stroke_rehab_agent/train/train_outputs/qwen08_multiseed_counting/seeds/seed_7331/qwen_with_patient_text/checkpoints/qwen35-0p8b-parallel-text-72027bf0bc3c/last.ckpt",
+  "source_metrics": "stroke_rehab_agent/train/train_outputs/qwen08_multiseed_counting/seeds/analysis/seed_level_metrics.csv",
+  "source_mas_settings": "stroke_rehab_agent/multi_agent_outputs/multiseed_text_v2.zip:multiseed_text_v2/seed_7331/tuned_config.json",
+  "notes": "Unmodified retained final-epoch checkpoint, selected among the ten text-conditioned runs by their saved test weighted F1. This is not a validation-best epoch checkpoint. Metrics are copied from saved results and have not been remeasured in the demo environment. The artifact contains trained parameters; the separate Base model weights and StrokeRehab data are still required."
+}
